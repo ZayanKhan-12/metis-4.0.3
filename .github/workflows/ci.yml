@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Does the library build, and do the programs actually work, across the
+  # toolchains people really use? gcc-14 and clang-18 matter most: they are the
+  # first releases to reject the pre-C99 constructs this project relied on.
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "ubuntu / gcc-13",   os: ubuntu-24.04, cc: gcc-13,  apt: gcc-13 }
+          - { name: "ubuntu / gcc-14",   os: ubuntu-24.04, cc: gcc-14,  apt: gcc-14 }
+          - { name: "ubuntu / clang-18", os: ubuntu-24.04, cc: clang-18, apt: clang-18 }
+          # Apple silicon matters specifically here: AArch64 passes variadic
+          # arguments on the stack rather than in registers, which is what made
+          # the GKfree() prototype bug fatal rather than cosmetic. x86_64 is
+          # already covered by the three Linux jobs above. (There is no hosted
+          # Intel macOS runner to add -- macos-13 was the last image and has
+          # been retired; jobs requesting it queue forever instead of failing.)
+          - { name: "macos / clang (Apple silicon)", os: macos-latest, cc: clang }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install compiler
+        if: matrix.apt != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_C_COMPILER=${{ matrix.cc }} -DMETIS_BUILD_PROGRAMS=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Smoke test
+        run: .github/scripts/smoke-test.sh build
+
+  # The reporter in issue #1 was on MSYS2 MINGW64, so build there explicitly.
+  mingw:
+    name: windows / mingw-w64 (MSYS2)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DMETIS_BUILD_PROGRAMS=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Smoke test
+        run: .github/scripts/smoke-test.sh build
+
+  # Pin the specific diagnostics that regressed this project, as errors, so the
+  # pre-C99 constructs cannot creep back in on a compiler that still tolerates
+  # them. GCC 14 makes the first four errors by default; naming them explicitly
+  # keeps the guarantee on every other compiler too.
+  strict:
+    name: strict diagnostics (C99 + C89 declarations)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile every translation unit with regressions as errors
+        run: |
+          set -o pipefail
+          flags="-std=c99 -ILib
+            -Werror=implicit-function-declaration
+            -Werror=incompatible-pointer-types
+            -Werror=int-conversion
+            -Werror=implicit-int
+            -Werror=return-type
+            -Werror=declaration-after-statement"
+          status=0
+          for f in Lib/*.c Programs/*.c Test/*.c; do
+            if ! gcc -fsyntax-only $flags "$f" 2>&1 | sed "s|^|  |"; then
+              echo "FAILED: $f"; status=1
+            fi
+          done
+          exit $status
+
+  # A clean build proves nothing about GKfree(): the pre-fix code compiled and
+  # then read varargs through the wrong calling convention. Run the real
+  # partitioner under the sanitizers to catch that class of bug directly.
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -DMETIS_BUILD_PROGRAMS=ON \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
+
+      - name: Build
+        run: cmake --build build -j
+
+      # METIS 4.0.3 has long standing memory leaks that are out of scope here,
+      # so leak detection is off; halt_on_error keeps every other finding fatal.
+      - name: Smoke test under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: .github/scripts/smoke-test.sh build

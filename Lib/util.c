@@ -124,14 +124,21 @@ void *GKmalloc(int nbytes, char *msg)
 /*************************************************************************
 * This function is my wrapper around free, allows multiple pointers    
 **************************************************************************/
-void GKfree(void **ptr1,...)
+void GKfree(void *ptr1,...)
 {
   va_list plist;
   void **ptr;
+  void **first = (void **)ptr1;
 
-  if (*ptr1 != NULL)
-    free(*ptr1);
-  *ptr1 = NULL;
+  /* The first parameter is typed void* rather than void** on purpose.  Every
+     caller passes some T** (idxtype**, KeyValueType**, ...), and void** is not
+     a generic pointer type in C, so a void** parameter made all 65 call sites
+     constraint violations -- diagnosed as -Wincompatible-pointer-types, which
+     GCC 14 promotes to a hard error.  void* accepts any object pointer, so the
+     call sites stay unchanged and remain correct. */
+  if (*first != NULL)
+    free(*first);
+  *first = NULL;
 
   va_start(plist, ptr1);
 
