@@ -23,8 +23,13 @@ jobs:
           - { name: "ubuntu / gcc-13",   os: ubuntu-24.04, cc: gcc-13,  apt: gcc-13 }
           - { name: "ubuntu / gcc-14",   os: ubuntu-24.04, cc: gcc-14,  apt: gcc-14 }
           - { name: "ubuntu / clang-18", os: ubuntu-24.04, cc: clang-18, apt: clang-18 }
-          - { name: "macos / clang (arm64)", os: macos-14, cc: clang }
-          - { name: "macos / clang (x86_64)", os: macos-13, cc: clang }
+          # Apple silicon matters specifically here: AArch64 passes variadic
+          # arguments on the stack rather than in registers, which is what made
+          # the GKfree() prototype bug fatal rather than cosmetic. x86_64 is
+          # already covered by the three Linux jobs above. (There is no hosted
+          # Intel macOS runner to add -- macos-13 was the last image and has
+          # been retired; jobs requesting it queue forever instead of failing.)
+          - { name: "macos / clang (Apple silicon)", os: macos-latest, cc: clang }
     steps:
       - uses: actions/checkout@v4
 
