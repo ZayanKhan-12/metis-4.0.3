@@ -20,9 +20,10 @@
 /*************************************************************************
  * Let the game begin
  **************************************************************************/
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int i, j, ne, nn, etype, numflag=0, nparts, edgecut;
+  int verbose = 0;
   idxtype *elmnts, *epart, *npart;
   timer IOTmr, DUALTmr;
   char etypestr[4][5] = {"TRI", "TET", "HEX", "QUAD"};
@@ -33,14 +34,13 @@ main(int argc, char *argv[])
     printf("        -v              Show verbose information\n");
     exit(0);
   }
-  bool verbose = false;
   if (argc == 4) {
     if (strcmp("-v",argv[3]) != 0) {
       printf("Usage: %s <meshfile> <nparts> [-v]\n",argv[0]);
       printf("        -v              Show verbose information\n");
       exit(0);
     }
-    verbose = true;
+    verbose = 1;
   }
 
   nparts = atoi(argv[2]);

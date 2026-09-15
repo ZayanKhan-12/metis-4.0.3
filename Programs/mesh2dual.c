@@ -20,7 +20,7 @@
 /*************************************************************************
 * Let the game begin
 **************************************************************************/
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int i, j, ne, nn, etype, numflag=0;
   idxtype *elmnts, *xadj, *adjncy;

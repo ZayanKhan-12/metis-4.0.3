@@ -19,7 +19,7 @@
 /*************************************************************************
 * Let the game begin
 **************************************************************************/
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int i, options[10];
   idxtype *perm, *iperm;
